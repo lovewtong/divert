@@ -3,12 +3,12 @@ use serde_json; // JSON 的序列化和反序列化
 
 #[tokio::main] // 使用 tokio 作为异步运行时
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let access_token = "BQBTMB6j0nAIUBnla37sixgsvz7FOeQ1npZHgP4A6ZbhdEm6ICISzm74Nk6N5yUOXaKLG7jn0b047JMaonMwPXX3QDfRYVtkM175Id2LfOtAf94Dx_o"; // 这里替换为你的访问令牌
+    let access_token = "BQAem8xH-jUN5Nh9tNWfxKYokOdUPay_zdPY_Wg4cLo0HwyFu93niEVdp_fS4L0SYiIdGLiVroDIBjBKXe3M_PilLLfntr_6Sk2VhfXEbU8qqkQuTDuIpRykGXA7gzAedlmc-ShxzY7JHi5SIET_vliv7dazbv1lcERHnv34Qv9BuAIBRWw6OHsYk-OiuEOMyUjjvuwIxFuCE0Ux4LEQyUmv4A"; // 这里替换为你的访问令牌
     println!("Using access token: {}", access_token);
 
     let client = reqwest::Client::new();
     let response = client
-        .get("https://api.spotify.com/v1/me/following")
+        .get("https://api.spotify.com/v1/me")
         .header("Authorization", format!("Bearer {}", access_token))
         .send()
         .await?;
