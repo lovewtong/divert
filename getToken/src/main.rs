@@ -1,6 +1,7 @@
-use actix_web::{web, App, HttpResponse, HttpServer, Responder, http::header};
-use serde::{Deserialize, Serialize};
+use actix_session::{CookieSession, Session};
+use actix_web::{http::header, web, App, HttpResponse, HttpServer, Responder};
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 struct AuthQuery {
@@ -16,15 +17,17 @@ struct AuthTokenResponse {
 async fn spotify_login() -> impl Responder {
     let client_id = "71b3175264c3491ea0a0103e72b469f2";
     let redirect_uri = "http://localhost:8080/callback";
-    let scope = "user-read-private user-read-email";
+    let scope = "user-library-read user-library-modify playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-follow-read user-follow-modify";
     let spotify_url = format!(
         "https://accounts.spotify.com/authorize?response_type=code&client_id={}&scope={}&redirect_uri={}",
         client_id, scope, redirect_uri
     );
-    HttpResponse::Found().append_header((header::LOCATION, spotify_url)).finish()
+    HttpResponse::Found()
+        .append_header((header::LOCATION, spotify_url))
+        .finish()
 }
 
-async fn spotify_callback(info: web::Query<AuthQuery>) -> impl Responder {
+async fn spotify_callback(info: web::Query<AuthQuery>, session: Session) -> impl Responder {
     let client_id = "71b3175264c3491ea0a0103e72b469f2";
     let client_secret = "522e3004ba824a70898c96c9496ead7e";
     let redirect_uri = "http://localhost:8080/callback";
@@ -38,17 +41,49 @@ async fn spotify_callback(info: web::Query<AuthQuery>) -> impl Responder {
         ("client_secret", client_secret),
     ];
 
-    match client
+    let response = client
         .post("https://accounts.spotify.com/api/token")
         .form(&params)
         .send()
-        .await
-    {
+        .await;
+
+    match response {
         Ok(resp) => match resp.json::<AuthTokenResponse>().await {
-            Ok(auth_token_response) => HttpResponse::Ok().json(auth_token_response),
+            Ok(auth_token_response) => {
+                session.insert("access_token", &auth_token_response.access_token).unwrap();
+                HttpResponse::Ok().body("access_token stored in session")
+            }
             Err(_) => HttpResponse::BadRequest().body("Failed to parse response"),
         },
         Err(_) => HttpResponse::BadRequest().body("Failed to send request"),
+    }
+}
+
+// 获取歌手
+async fn get_followed_artists(session: Session) -> impl Responder{
+
+    // 获取session
+    if let Ok(Some(access_token)) = session.get::<String>("access_token") {
+
+        // 创建HTTP客户端
+        let client = Client::new();
+        // 发送GET请求到Spotify API
+        let response = client.get("https://api.spotify.com/v1/me/following?type=artist")
+            .header(header::AUTHORIZATION, format!("Bearer {}",access_token))
+            .send()
+            .await;
+
+        // 处理响应
+        match response {
+            Ok(resp) => match resp.text().await{
+                Ok(text) => HttpResponse::Ok().content_type("application/json").body(text),
+                Err(_) => HttpResponse::InternalServerError().body("Faild to read response body"),
+            },
+            Err(_) => HttpResponse::InternalServerError().body("Faild to send request"),
+
+        }
+    } else {
+        HttpResponse::Unauthorized().body("No access_token found in session")
     }
 }
 
