@@ -91,8 +91,11 @@ async fn get_followed_artists(session: Session) -> impl Responder{
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
         App::new()
+            // 配置基于 Cookie 的会话中间件，注意在生产环境中使用安全的密钥
+            .wrap(CookieSession::signed(&[0; 32]).secure(false)) // 在生产环境中应该使用 `.secure(true)` 和 HTTPS
             .route("/login", web::get().to(spotify_login))
             .route("/callback", web::get().to(spotify_callback))
+            .route("/artist", web::get().to(get_followed_artists))
     })
     .bind("127.0.0.1:8080")?
     .run()
