@@ -59,7 +59,7 @@ async fn spotify_callback(info: web::Query<AuthQuery>, session: Session) -> impl
     }
 }
 
-// 获取歌手
+// 获取关注的歌手
 async fn get_followed_artists(session: Session) -> impl Responder{
 
     // 获取session
@@ -87,6 +87,62 @@ async fn get_followed_artists(session: Session) -> impl Responder{
     }
 }
 
+// 获取关注的歌曲
+async fn get_followed_tracks(session: Session) -> impl Responder{
+
+    // 获取session
+    if let Ok(Some(access_token)) = session.get::<String>("access_token") {
+
+        // 创建HTTP客户端
+        let client = Client::new();
+        // 发送GET请求到Spotify API
+        let response = client.get("https://api.spotify.com/v1/me/tracks")
+            .header(header::AUTHORIZATION, format!("Bearer {}",access_token))
+            .send()
+            .await;
+
+        // 处理响应
+        match response {
+            Ok(resp) => match resp.text().await{
+                Ok(text) => HttpResponse::Ok().content_type("application/json").body(text),
+                Err(_) => HttpResponse::InternalServerError().body("Faild to read response body"),
+            },
+            Err(_) => HttpResponse::InternalServerError().body("Faild to send request"),
+
+        }
+    } else {
+        HttpResponse::Unauthorized().body("No access_token found in session")
+    }
+}
+
+// 获取关注的歌单
+async fn get_followed_playlist(session: Session) -> impl Responder{
+
+    // 获取session
+    if let Ok(Some(access_token)) = session.get::<String>("access_token") {
+
+        // 创建HTTP客户端
+        let client = Client::new();
+        // 发送GET请求到Spotify API
+        let response = client.get("https://api.spotify.com/v1/me/playlist")
+            .header(header::AUTHORIZATION, format!("Bearer {}",access_token))
+            .send()
+            .await;
+
+        // 处理响应
+        match response {
+            Ok(resp) => match resp.text().await{
+                Ok(text) => HttpResponse::Ok().content_type("application/json").body(text),
+                Err(_) => HttpResponse::InternalServerError().body("Faild to read response body"),
+            },
+            Err(_) => HttpResponse::InternalServerError().body("Faild to send request"),
+
+        }
+    } else {
+        HttpResponse::Unauthorized().body("No access_token found in session")
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
@@ -96,6 +152,8 @@ async fn main() -> std::io::Result<()> {
             .route("/login", web::get().to(spotify_login))
             .route("/callback", web::get().to(spotify_callback))
             .route("/artist", web::get().to(get_followed_artists))
+            .route("/tracks", web::get().to(get_followed_tracks))
+            .route("/playlist", web::get().to(get_followed_playlist))
     })
     .bind("127.0.0.1:8080")?
     .run()
