@@ -34,6 +34,12 @@ struct TrackItem {
     // include other fields as necessary
 }
 
+#[derive(Deserialize)]
+struct TracksList {
+    tracks: Vec<String>,
+}
+
+
 // 登录
 async fn spotify_login() -> impl Responder {
     dotenv().ok(); // 调用这个函数来读取 .env 文件
@@ -181,7 +187,7 @@ async fn get_followed_playlist(
 
 // 这个函数接受歌曲名列表和会话，尝试将它们添加到Spotify歌单
 async fn search_and_add_tracks(
-    track_names: Vec<String>, 
+    tracks_list: web::Json<TracksList>, 
     session: Session
 ) -> impl Responder {
 
@@ -192,7 +198,7 @@ async fn search_and_add_tracks(
         let client = Client::new();
 
         let mut track_uris = Vec::new();
-        for track_name in track_names {
+        for track_name in &tracks_list.tracks {
             // Spotify API 搜索歌曲
             let search_response = client
                 .get(format!("https://api.spotify.com/v1/search?q={}&type=track", track_name))
