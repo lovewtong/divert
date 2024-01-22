@@ -184,7 +184,7 @@ async fn get_followed_playlist(session: Session) -> impl Responder {
         let client = Client::new();
         // 发送GET请求到Spotify API
         let response = client
-            .get("https://api.spotify.com/v1/me/playlist")
+            .get("https://api.spotify.com/v1/me/playlists")
             .header(header::AUTHORIZATION, format!("Bearer {}", access_token))
             .send()
             .await;
