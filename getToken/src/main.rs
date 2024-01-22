@@ -5,7 +5,6 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
 
-
 #[derive(Deserialize)]
 struct AuthQuery {
     code: String,
@@ -31,7 +30,7 @@ struct TrackItem {
     id: String,
     // include other fields as necessary
     uri: String, // The URI is needed to add the track to the playlist
-    // include other fields as necessary
+                 // include other fields as necessary
 }
 
 #[derive(Deserialize)]
@@ -39,7 +38,29 @@ struct TracksList {
     tracks: Vec<String>,
 }
 
+#[derive(Deserialize)]
+struct SpotifyPlaylistResponse {
+    items: Vec<PlaylistItem>,
+}
 
+#[derive(Deserialize)]
+struct PlaylistItem {
+    name: String,
+    tracks: PlaylistTracks,
+    public: bool,
+    collaborative: bool,
+    owner: PlaylistOwner,
+}
+
+#[derive(Deserialize)]
+struct PlaylistTracks {
+    total: i32,
+}
+
+#[derive(Deserialize)]
+struct PlaylistOwner {
+    display_name: String,
+}
 // 登录
 async fn spotify_login() -> impl Responder {
     dotenv().ok(); // 调用这个函数来读取 .env 文件
@@ -156,9 +177,7 @@ async fn get_followed_tracks(session: Session) -> impl Responder {
 }
 
 // 获取关注的歌单
-async fn get_followed_playlist(
-    session: Session
-) -> impl Responder {
+async fn get_followed_playlist(session: Session) -> impl Responder {
     // 获取session
     if let Ok(Some(access_token)) = session.get::<String>("access_token") {
         // 创建HTTP客户端
@@ -172,28 +191,70 @@ async fn get_followed_playlist(
 
         // 处理响应
         match response {
-            Ok(resp) => match resp.text().await {
-                Ok(text) => HttpResponse::Ok()
-                    .content_type("application/json")
-                    .body(text),
-                Err(_) => HttpResponse::InternalServerError().body("Faild to read response body"),
-            },
-            Err(_) => HttpResponse::InternalServerError().body("Faild to send request"),
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    match resp.json::<SpotifyPlaylistResponse>().await {
+                        Ok(playlists) => {
+                            // 创建一个新的 Vec，包含前端所需的歌单信息
+                            let playlist_info: Vec<_> = playlists
+                                .items
+                                .into_iter()
+                                .map(|item| {
+                                    let PlaylistItem {
+                                        name,
+                                        tracks,
+                                        public,
+                                        collaborative,
+                                        owner,
+                                    } = item;
+                                    serde_json::json!({
+                                        "name": name,
+                                        "tracks": tracks.total,
+                                        "public": public,
+                                        "collaborative": collaborative,
+                                        "owner": owner.display_name,
+                                    })
+                                })
+                                .collect();
+
+                            // 返回json响应
+                            HttpResponse::Ok().json(playlist_info)
+                        }
+                        Err(_) => {
+                            HttpResponse::InternalServerError().body("Faild to parse playlist")
+                        }
+                    }
+                } else {
+                    // 打印出错误状态码和错误消息
+                    let status_code = resp.status();
+                    let error_message = resp.text().await.unwrap_or_else(|_| "Failed to read error message".to_string());
+                    println!("Error status: {}, Message: {}", status_code, error_message);
+                    HttpResponse::InternalServerError().body(format!("Failed to get playlist from Spotify: {}", error_message))
+                }
+            }
+            Err(_) => HttpResponse::InternalServerError().body("Faild to send request to Spotify"),
         }
+        // match response {
+        //     Ok(resp) => match resp.text().await {
+        //         Ok(text) => HttpResponse::Ok()
+        //             .content_type("application/json")
+        //             .body(text),
+        //         Err(_) => HttpResponse::InternalServerError().body("Faild to read response body"),
+        //     },
+        //     Err(_) => HttpResponse::InternalServerError().body("Faild to send request"),
+        // }
     } else {
         HttpResponse::Unauthorized().body("No access_token found in session")
     }
 }
 
-// 这个函数接受歌曲名列表和会话，尝试将它们添加到Spotify歌单
+// 歌单列表添加到Spotify歌单
 async fn search_and_add_tracks(
-    tracks_list: web::Json<TracksList>, 
-    session: Session
+    tracks_list: web::Json<TracksList>,
+    session: Session,
 ) -> impl Responder {
-
     // 从会话中获取access_token
     if let Ok(Some(access_token)) = session.get::<String>("access_token") {
-
         // 创建htpp客户端
         let client = Client::new();
 
@@ -201,7 +262,10 @@ async fn search_and_add_tracks(
         for track_name in &tracks_list.tracks {
             // Spotify API 搜索歌曲
             let search_response = client
-                .get(format!("https://api.spotify.com/v1/search?q={}&type=track", track_name))
+                .get(format!(
+                    "https://api.spotify.com/v1/search?q={}&type=track",
+                    track_name
+                ))
                 .header(header::AUTHORIZATION, format!("Bearer {}", access_token))
                 .send()
                 .await;
@@ -225,14 +289,17 @@ async fn search_and_add_tracks(
             .await;
 
         match playlist_response {
-            Ok(resp) => HttpResponse::Ok().content_type("application/json").body(resp.text().await.unwrap()),
-            Err(_) => HttpResponse::InternalServerError().body("Failed to add tracks to the playlist"),
+            Ok(resp) => HttpResponse::Ok()
+                .content_type("application/json")
+                .body(resp.text().await.unwrap()),
+            Err(_) => {
+                HttpResponse::InternalServerError().body("Failed to add tracks to the playlist")
+            }
         }
     } else {
-        HttpResponse::Unauthorized().body("No access_token found in session") 
+        HttpResponse::Unauthorized().body("No access_token found in session")
     }
 }
-
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
