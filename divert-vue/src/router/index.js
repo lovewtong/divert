@@ -1,19 +1,44 @@
-import { createRouter, createWebHistory } from 'vue-router'
-import Playlists from '../components/Playlists.vue'
-import Tracks from '../components/Tracks.vue'
-import Albums from '../components/Albums.vue'
-import Artists from '../components/Artists.vue'
+import { createRouter, createWebHistory } from 'vue-router';
+
+// Import your components
+import Playlists from '@/components/Playlists.vue';
+import Tracks from '@/components/Tracks.vue';
+import Albums from '@/components/Albums.vue';
+import Artists from '@/components/Artists.vue';
+import PlaylistTable from '@/components/MusicTable.vue';
 
 const routes = [
-  { path: '/playlists', component: Playlists },
-  { path: '/tracks', component: Tracks },
-  { path: '/albums', component: Albums },
-  { path: '/artists', component: Artists },
-]
+  {
+    path: '/',
+    name: 'Playlists',
+    component: Playlists
+  },
+  {
+    path: '/tracks',
+    name: 'Tracks',
+    component: Tracks
+  },
+  {
+    path: '/albums',
+    name: 'Albums',
+    component: Albums
+  },
+  {
+    path: '/artists',
+    name: 'Artists',
+    component: Artists
+  },
+  {
+    path: '/playlist-table',
+    name: 'PlaylistTable',
+    component: PlaylistTable
+  },
+  // Add other routes as needed
+];
 
 const router = createRouter({
-  history: createWebHistory(process.env.BASE_URL),
+  history: createWebHistory(),
   routes
-})
+});
 
-export default router
+export default router;

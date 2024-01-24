@@ -11,23 +11,21 @@
 
     <!-- Navigation Drawer -->
     <v-navigation-drawer app>
-      <v-list>
-        <v-list-item-group v-model="drawerItem">
-          <v-list-item v-for="(item, i) in menuItems" :key="i" @click="goTo(item.link)">
-            <v-list-item-icon>
-              <v-icon>{{ item.icon }}</v-icon>
-            </v-list-item-icon>
-            <v-list-item-content>
-              <v-list-item-title>{{ item.text }}</v-list-item-title>
-            </v-list-item-content>
-          </v-list-item>
-        </v-list-item-group>
+      <v-list dense>
+        <v-list-item link v-for="item in menuItems" :key="item.title" @click="navigateTo(item.link)">
+          <v-list-item-icon>
+            <v-icon>{{ item.icon }}</v-icon>
+          </v-list-item-icon>
+          <v-list-item-content>
+            <v-list-item-title>{{ item.title }}</v-list-item-title>
+          </v-list-item-content>
+        </v-list-item>
       </v-list>
     </v-navigation-drawer>
 
-    <!-- Main Content -->
+    <!-- Main content -->
     <v-main>
-      <v-container>
+      <v-container fluid>
         <router-view></router-view>
       </v-container>
     </v-main>
@@ -36,28 +34,26 @@
 
 <script>
 export default {
-  data() {
-    return {
-      user: null, // Replace with your authentication logic
-      drawerItem: null,
-      menuItems: [
-        { text: 'Playlists', icon: 'mdi-playlist-music', link: '/playlists' },
-        { text: 'Tracks', icon: 'mdi-music-note', link: '/tracks' },
-        { text: 'Albums', icon: 'mdi-album', link: '/albums' },
-        { text: 'Artists', icon: 'mdi-account-music', link: '/artists' },
-      ],
-    };
-  },
+  data: () => ({
+    user: null, // This should be replaced with actual user authentication logic
+    menuItems: [
+      { title: 'Playlists', icon: 'mdi-playlist-music', link: '/playlists' },
+      { title: 'Tracks', icon: 'mdi-music-note', link: '/tracks' },
+      { title: 'Albums', icon: 'mdi-album', link: '/albums' },
+      { title: 'Artists', icon: 'mdi-account-music', link: '/artists' },
+      // Add more menu items as needed
+    ],
+  }),
   methods: {
     signIn() {
-      // Replace with your sign in logic
-      this.user = 'User';
+      // Placeholder for sign-in logic
+      this.user = 'User Name'; // Replace with actual sign-in logic
     },
     signOut() {
-      // Replace with your sign out logic
-      this.user = null;
+      // Placeholder for sign-out logic
+      this.user = null; // Replace with actual sign-out logic
     },
-    goTo(link) {
+    navigateTo(link) {
       this.$router.push(link);
     },
   },
@@ -65,5 +61,5 @@ export default {
 </script>
 
 <style>
-/* Add your styles here */
+/* Add your CSS styles here */
 </style>
