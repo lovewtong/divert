@@ -90,8 +90,6 @@ async fn login_source(session: Session) -> impl Responder {
         .finish()
 }
 
-
-
 // 登录转移账号
 async fn login_target(session: Session) -> impl Responder {
     dotenv().ok(); // 调用这个函数来读取 .env 文件
@@ -151,7 +149,7 @@ async fn login_target(session: Session) -> impl Responder {
 //         .finish()
 // }
 
-// 增加一个新的结构体来接收额外的查询参数
+// spotify_callback结构体:增加一个新的结构体来接收额外的查询参数
 #[derive(Deserialize)]
 struct SpotifyCallbackQuery {
     code: String,
@@ -234,7 +232,6 @@ async fn spotify_callback(
 //     }
 // }
 
-
 // 获取关注的歌手，并考虑账号转移所需参数
 async fn get_followed_artists(session: Session) -> impl Responder {
     // 从会话中获取source_access_token
@@ -244,7 +241,10 @@ async fn get_followed_artists(session: Session) -> impl Responder {
         // 发送GET请求到Spotify API获取关注的歌手
         let response = client
             .get("https://api.spotify.com/v1/me/following?type=artist")
-            .header(header::AUTHORIZATION, format!("Bearer {}", access_token_source))
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer {}", access_token_source),
+            )
             .send()
             .await;
 
@@ -272,7 +272,9 @@ async fn get_followed_artists(session: Session) -> impl Responder {
                             // 返回json响应
                             HttpResponse::Ok().json(artists_info)
                         }
-                        Err(_) => HttpResponse::InternalServerError().body("Failed to parse artist data"),
+                        Err(_) => {
+                            HttpResponse::InternalServerError().body("Failed to parse artist data")
+                        }
                     }
                 } else {
                     // 错误处理
@@ -288,6 +290,8 @@ async fn get_followed_artists(session: Session) -> impl Responder {
 
 // 获取关注的歌曲
 async fn get_followed_tracks(session: Session) -> impl Responder {
+
+    
     // 获取session
     if let Ok(Some(access_token)) = session.get::<String>("access_token") {
         // 创建HTTP客户端
