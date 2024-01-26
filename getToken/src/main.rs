@@ -39,20 +39,6 @@ struct TracksList {
 }
 
 #[derive(Deserialize)]
-struct SpotifyPlaylistResponse {
-    items: Vec<PlaylistItem>,
-}
-
-#[derive(Deserialize)]
-struct PlaylistItem {
-    name: String,
-    tracks: PlaylistTracks,
-    public: bool,
-    collaborative: bool,
-    owner: PlaylistOwner,
-}
-
-#[derive(Deserialize)]
 struct PlaylistTracks {
     total: i32,
 }
@@ -117,38 +103,6 @@ async fn login_target(session: Session) -> impl Responder {
         .finish()
 }
 
-// // 登录被转移账号
-// async fn login_source() -> impl Responder {
-//     let client_id = env::var("SPOTIFY_CLIENT_ID").expect("SPOTIFY_CLIENT_ID must be set");
-//     let redirect_uri = env::var("REDIRECT_URI").expect("REDIRECT_URI must be set");
-
-//     let scope = "user-read-private user-read-email playlist-modify-public playlist-read-private";
-//     let spotify_url = format!(
-//         "https://accounts.spotify.com/authorize?response_type=code&client_id={}&redirect_uri={}&scope={}&show_dialog=true",
-//         client_id, redirect_uri, scope
-//     );
-
-//     HttpResponse::Found()
-//         .append_header((header::LOCATION, spotify_url))
-//         .finish()
-// }
-
-// // 登录转移账号
-// async fn login_target() -> impl Responder {
-//     let client_id = env::var("SPOTIFY_CLIENT_ID").expect("SPOTIFY_CLIENT_ID must be set");
-//     let redirect_uri = env::var("REDIRECT_URI").expect("REDIRECT_URI must be set");
-
-//     let scope = "user-read-private user-read-email playlist-modify-public playlist-read-private";
-//     let spotify_url = format!(
-//         "https://accounts.spotify.com/authorize?response_type=code&client_id={}&redirect_uri={}&scope={}&show_dialog=true",
-//         client_id, redirect_uri, scope
-//     );
-
-//     HttpResponse::Found()
-//         .append_header((header::LOCATION, spotify_url))
-//         .finish()
-// }
-
 // spotify_callback结构体:增加一个新的结构体来接收额外的查询参数
 #[derive(Deserialize)]
 struct SpotifyCallbackQuery {
@@ -204,35 +158,15 @@ async fn spotify_callback(
     }
 }
 
-// // 获取关注的歌手
-// async fn get_followed_artists(session: Session) -> impl Responder {
-//     // 获取session
-//     if let Ok(Some(access_token)) = session.get::<String>("access_token") {
-//         // 创建HTTP客户端
-//         let client = Client::new();
-//         // 发送GET请求到Spotify API
-//         let response = client
-//             .get("https://api.spotify.com/v1/me/following?type=artist")
-//             .header(header::AUTHORIZATION, format!("Bearer {}", access_token))
-//             .send()
-//             .await;
-
-//         // 处理响应
-//         match response {
-//             Ok(resp) => match resp.text().await {
-//                 Ok(text) => HttpResponse::Ok()
-//                     .content_type("application/json")
-//                     .body(text),
-//                 Err(_) => HttpResponse::InternalServerError().body("Faild to read response body"),
-//             },
-//             Err(_) => HttpResponse::InternalServerError().body("Faild to send request"),
-//         }
-//     } else {
-//         HttpResponse::Unauthorized().body("No access_token found in session")
-//     }
-// }
-
-// 获取关注的歌手，并考虑账号转移所需参数
+#[derive(Deserialize)]
+struct SpotifyArtistResponse {
+    items: Vec<ArtistItem>,
+}
+#[derive(Deserialize)]
+struct ArtistItem {
+    artist: String,
+}
+// 获取关注的歌手
 async fn get_followed_artists(session: Session) -> impl Responder {
     // 从会话中获取source_access_token
     if let Ok(Some(access_token_source)) = session.get::<String>("access_token_source") {
@@ -252,82 +186,165 @@ async fn get_followed_artists(session: Session) -> impl Responder {
         match response {
             Ok(resp) => {
                 if resp.status().is_success() {
-                    match resp.json::<serde_json::Value>().await {
-                        Ok(artists_data) => {
-                            // 解析歌手数据并提取需要的信息
-                            let artists_info: Vec<_> = artists_data["artists"]["items"]
-                                .as_array()
-                                .unwrap_or(&vec![])
-                                .iter()
-                                .map(|artist| {
-                                    // 除了前端所需的展示信息之外，还可以提取其他用于账号转移的数据
+                    match resp.json::<SpotifyArtistResponse>().await {
+                        Ok(artist) => {
+                            // 创建一个新的Vec，包含前端所需的歌曲信息
+                            let artist_info: Vec<_> = artist
+                                .items
+                                .into_iter()
+                                .map(|item| {
+                                    let ArtistItem { artist } = item;
                                     serde_json::json!({
-                                        "name": artist["name"].as_str().unwrap_or(""),
-                                        "id": artist["id"].as_str().unwrap_or(""), // 保存ID用于转移
-                                        // ...可以添加其他转移所需的信息
+                                        "artist": artist,
                                     })
                                 })
                                 .collect();
 
-                            // 返回json响应
-                            HttpResponse::Ok().json(artists_info)
+                            // 返回json反向
+                            HttpResponse::Ok().json(artist_info)
                         }
-                        Err(_) => {
-                            HttpResponse::InternalServerError().body("Failed to parse artist data")
-                        }
+                        Err(_) => HttpResponse::InternalServerError().body("Faild to parse artist"),
                     }
                 } else {
-                    // 错误处理
-                    HttpResponse::InternalServerError().body("Failed to get artists from Spotify")
+                    // 打印错误状态码和错误消息
+                    let status_code = resp.status();
+                    let error_messgae = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Failed to read error message".to_string());
+                    println!("Error status: {}, MESSAGE: {}", status_code, error_messgae);
+                    HttpResponse::InternalServerError().body(format!(
+                        "Failed to get artist from Spotify: {}",
+                        error_messgae
+                    ))
                 }
             }
-            Err(_) => HttpResponse::InternalServerError().body("Failed to send request to Spotify"),
+            Err(_) => HttpResponse::InternalServerError().body("Faild to send request to Spotify"),
         }
     } else {
         HttpResponse::Unauthorized().body("No source access_token found in session")
     }
 }
 
+#[derive(Deserialize)]
+struct SpotifyTracksResponse {
+    items: Vec<TracksItem>,
+}
+#[derive(Deserialize)]
+struct TracksItem {
+    added_at: String,
+    track: Track,
+}
+#[derive(Deserialize)]
+struct Track {
+    album: Album,
+    artists: Vec<Artist>,
+    // ... 其他字段
+    name: String,
+    // ...
+    id: String,
+}
+#[derive(Deserialize)]
+struct Album {
+    // ... 相关字段
+    name: String,
+    // ...
+}
+
+#[derive(Deserialize)]
+struct Artist {
+    // ... 相关字段
+    name: String,
+    // ...
+}
 // 获取关注的歌曲
 async fn get_followed_tracks(session: Session) -> impl Responder {
-
-    
-    // 获取session
-    if let Ok(Some(access_token)) = session.get::<String>("access_token") {
+    // 获取access_session_source
+    if let Ok(Some(access_token_source)) = session.get::<String>("access_token_source") {
         // 创建HTTP客户端
         let client = Client::new();
         // 发送GET请求到Spotify API
         let response = client
             .get("https://api.spotify.com/v1/me/tracks")
-            .header(header::AUTHORIZATION, format!("Bearer {}", access_token))
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer {}", access_token_source),
+            )
             .send()
             .await;
 
         // 处理响应
         match response {
-            Ok(resp) => match resp.text().await {
-                Ok(text) => HttpResponse::Ok()
-                    .content_type("application/json")
-                    .body(text),
-                Err(_) => HttpResponse::InternalServerError().body("Faild to read response body"),
-            },
-            Err(_) => HttpResponse::InternalServerError().body("Faild to send request"),
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    match resp.json::<SpotifyTracksResponse>().await {
+                        Ok(tracks_response) => {
+                            // 创建一个新的Vec，包含前端所需的歌曲信息
+                            let tracks_info: Vec<_> = tracks_response
+                                .items
+                                .into_iter()
+                                .map(|item| {
+                                    serde_json::json!({
+                                        "id": item.track.id,
+                                        "title": item.track.name,
+                                        "artist": item.track.album.name,
+                                        "album": item.track.artists.iter().map(|artist| &artist.name).collect::<Vec<&String>>()
+                                    })
+                                })
+                                .collect();
+
+                            // 返回json反向
+                            HttpResponse::Ok().json(tracks_info)
+                        }
+                        Err(_) => HttpResponse::InternalServerError().body("Faild to parse tracks"),
+                    }
+                } else {
+                    // 打印错误状态码和错误消息
+                    let status_code = resp.status();
+                    let error_messgae = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Failed to read error message".to_string());
+                    println!("Error status: {}, MESSAGE: {}", status_code, error_messgae);
+                    HttpResponse::InternalServerError().body(format!(
+                        "Failed to get playlist from Spotify: {}",
+                        error_messgae
+                    ))
+                }
+            }
+            Err(_) => HttpResponse::InternalServerError().body("Faild to send request to Spotify"),
         }
     } else {
         HttpResponse::Unauthorized().body("No access_token found in session")
     }
 }
 
+#[derive(Deserialize)]
+struct SpotifyPlaylistResponse {
+    items: Vec<PlaylistItem>,
+}
+#[derive(Deserialize)]
+struct PlaylistItem {
+    name: String,
+    tracks: PlaylistTracks,
+    public: bool,
+    collaborative: bool,
+    owner: PlaylistOwner,
+    id: String,
+}
 // 获取关注的歌单
 async fn get_followed_playlist(session: Session) -> impl Responder {
     // 获取session
-    if let Ok(Some(access_token)) = session.get::<String>("access_token") {
+    if let Ok(Some(access_token_source)) = session.get::<String>("access_token_source") {
         // 创建HTTP客户端
         let client = Client::new();
         // 发送GET请求到Spotify API
         let response = client
             .get("https://api.spotify.com/v1/me/playlists")
-            .header(header::AUTHORIZATION, format!("Bearer {}", access_token))
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer {}", access_token_source),
+            )
             .send()
             .await;
 
@@ -348,6 +365,7 @@ async fn get_followed_playlist(session: Session) -> impl Responder {
                                         public,
                                         collaborative,
                                         owner,
+                                        id,
                                     } = item;
                                     serde_json::json!({
                                         "name": name,
@@ -355,6 +373,7 @@ async fn get_followed_playlist(session: Session) -> impl Responder {
                                         "public": public,
                                         "collaborative": collaborative,
                                         "owner": owner.display_name,
+                                        "id": id,
                                     })
                                 })
                                 .collect();
@@ -382,15 +401,6 @@ async fn get_followed_playlist(session: Session) -> impl Responder {
             }
             Err(_) => HttpResponse::InternalServerError().body("Faild to send request to Spotify"),
         }
-        // match response {
-        //     Ok(resp) => match resp.text().await {
-        //         Ok(text) => HttpResponse::Ok()
-        //             .content_type("application/json")
-        //             .body(text),
-        //         Err(_) => HttpResponse::InternalServerError().body("Faild to read response body"),
-        //     },
-        //     Err(_) => HttpResponse::InternalServerError().body("Faild to send request"),
-        // }
     } else {
         HttpResponse::Unauthorized().body("No access_token found in session")
     }
