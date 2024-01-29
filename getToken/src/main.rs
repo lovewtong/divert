@@ -175,13 +175,6 @@ struct Album {
     artists: Vec<Artist>,
     total_tracks: u32, // 歌曲数量
 }
-
-
-
-#[derive(Deserialize)]
-struct TracksLink {
-    href: String,
-}
 // 获取保存的专辑
 async fn get_saved_albums(session: Session) -> impl Responder {
     if let Ok(Some(access_token_source)) = session.get::<String>("access_token_source") {
@@ -226,7 +219,6 @@ async fn get_saved_albums(session: Session) -> impl Responder {
         HttpResponse::Unauthorized().body("No access_token found in session")
     }
 }
-
 
 
 
@@ -310,7 +302,7 @@ struct SpotifyTracksResponse {
 }
 #[derive(Deserialize)]
 struct TracksItem {
-    added_at: String,
+    // added_at: String, //添加时间
     track: Track,
 }
 #[derive(Deserialize)]
@@ -322,8 +314,6 @@ struct Track {
     // ...
     id: String,
 }
-
-
 #[derive(Deserialize)]
 struct Artist {
     // ... 相关字段

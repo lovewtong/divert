@@ -1,15 +1,18 @@
 import { createRouter, createWebHistory } from 'vue-router';
-
-// Import your components
-import Playlists from '@/components/Playlists.vue';
-import Tracks from '@/components/Tracks.vue';
-import Albums from '@/components/Albums.vue';
-import Artists from '@/components/Artists.vue';
-import PlaylistTable from '@/components/MusicTable.vue';
+import Home from '../views/Home.vue';
+import Playlists from '../views/Playlists.vue';
+import Tracks from '../views/Tracks.vue';
+import Albums from '../views/Albums.vue';
+import Artists from '../views/Artists.vue';
 
 const routes = [
   {
     path: '/',
+    name: 'Home',
+    component: Home
+  },
+  {
+    path: '/playlists',
     name: 'Playlists',
     component: Playlists
   },
@@ -28,16 +31,11 @@ const routes = [
     name: 'Artists',
     component: Artists
   },
-  {
-    path: '/playlist-table',
-    name: 'PlaylistTable',
-    component: PlaylistTable
-  },
-  // Add other routes as needed
+  // 其他路由...
 ];
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(process.env.BASE_URL),
   routes
 });
 
