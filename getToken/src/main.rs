@@ -159,12 +159,90 @@ async fn spotify_callback(
 }
 
 #[derive(Deserialize)]
+struct SpotifyAlbumsResponse {
+    items: Vec<AlbumItem>,
+}
+
+#[derive(Deserialize)]
+struct AlbumItem {
+    album: Album,
+}
+
+#[derive(Deserialize)]
+struct Album {
+    id: String,
+    name: String,
+    artists: Vec<Artist>,
+    total_tracks: u32, // 歌曲数量
+}
+
+
+
+#[derive(Deserialize)]
+struct TracksLink {
+    href: String,
+}
+// 获取保存的专辑
+async fn get_saved_albums(session: Session) -> impl Responder {
+    if let Ok(Some(access_token_source)) = session.get::<String>("access_token_source") {
+        let client = reqwest::Client::new();
+        let response = client
+            .get("https://api.spotify.com/v1/me/albums")
+            .header(header::AUTHORIZATION, format!("Bearer {}", access_token_source))
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    match resp.json::<SpotifyAlbumsResponse>().await {
+                        Ok(albums_response) => {
+                            let album_info: Vec<_> = albums_response.items.into_iter().map(|item| {
+                                serde_json::json!({
+                                    "id": item.album.id,
+                                    "title": item.album.name,
+                                    "artist": item.album.artists.iter().map(|artist| artist.name.clone()).collect::<Vec<String>>(),
+                                    "tracks": item.album.total_tracks,
+                                })
+                            }).collect();
+
+                            HttpResponse::Ok().json(album_info)
+                        }
+                        Err(_) => HttpResponse::InternalServerError().body("Failed to parse albums"),
+                    }
+                } else {
+                    let status_code = resp.status();
+                    let error_message = resp.text().await.unwrap_or_else(|_| "Failed to read error message".to_string());
+                    println!("Error status: {}, MESSAGE: {}", status_code, error_message);
+                    HttpResponse::InternalServerError().body(format!(
+                        "Failed to get albums from Spotify: {}",
+                        error_message
+                    ))
+                }
+            }
+            Err(_) => HttpResponse::InternalServerError().body("Failed to send request to Spotify"),
+        }
+    } else {
+        HttpResponse::Unauthorized().body("No access_token found in session")
+    }
+}
+
+
+
+
+
+#[derive(Deserialize)]
 struct SpotifyArtistResponse {
+    artists: ArtistsResponse
+}
+#[derive(Deserialize)]
+struct ArtistsResponse {
     items: Vec<ArtistItem>,
 }
 #[derive(Deserialize)]
 struct ArtistItem {
-    artist: String,
+    id: String,
+    name: String,
 }
 // 获取关注的歌手
 async fn get_followed_artists(session: Session) -> impl Responder {
@@ -190,12 +268,12 @@ async fn get_followed_artists(session: Session) -> impl Responder {
                         Ok(artist) => {
                             // 创建一个新的Vec，包含前端所需的歌曲信息
                             let artist_info: Vec<_> = artist
-                                .items
+                                .artists.items
                                 .into_iter()
                                 .map(|item| {
-                                    let ArtistItem { artist } = item;
                                     serde_json::json!({
-                                        "artist": artist,
+                                        "id": item.id,
+                                        "name": item.name,
                                     })
                                 })
                                 .collect();
@@ -244,12 +322,7 @@ struct Track {
     // ...
     id: String,
 }
-#[derive(Deserialize)]
-struct Album {
-    // ... 相关字段
-    name: String,
-    // ...
-}
+
 
 #[derive(Deserialize)]
 struct Artist {
@@ -468,6 +541,7 @@ async fn main() -> std::io::Result<()> {
             .route("/login/source", web::get().to(login_source))
             .route("/login/target", web::get().to(login_target))
             .route("/callback", web::get().to(spotify_callback))
+            .route("/albume", web::get().to(get_saved_albums))
             .route("/artist", web::get().to(get_followed_artists))
             .route("/tracks", web::get().to(get_followed_tracks))
             .route("/playlist", web::get().to(get_followed_playlist))
