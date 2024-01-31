@@ -157,6 +157,58 @@ async fn spotify_callback(
         Err(_) => HttpResponse::BadRequest().body("Failed to send request"),
     }
 }
+// SpotifyUserProfileResponse结构体
+#[derive(Deserialize, Serialize)]
+struct SpotifyUserProfileResponse {
+    display_name: Option<String>,
+}
+
+
+// 获取用户名
+async fn get_spotify_user_profile(session: Session) -> impl Responder {
+    if let Ok(Some(access_token)) = session.get::<String>("access_token_source") {
+        let client = reqwest::Client::new();
+        let response = client
+            .get("https://api.spotify.com/v1/me")
+            .bearer_auth(access_token)
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    match resp.json::<SpotifyUserProfileResponse>().await {
+                        Ok(user_profile) => {
+                            // 成功获取用户信息，只返回 display_name
+                            HttpResponse::Ok().json(user_profile)
+                        }
+                        Err(_) => {
+                            // 解析响应失败
+                            HttpResponse::InternalServerError().body("Failed to parse user profile")
+                        }
+                    }
+                } else {
+                    // 处理非成功状态码的响应
+                    let status_code = resp.status();
+                    let error_message = resp.text().await.unwrap_or_else(|_| "Failed to read error message".to_string());
+                    println!("Error status: {}, MESSAGE: {}", status_code, error_message);
+                    HttpResponse::InternalServerError().body(format!(
+                        "Failed to get user profile from Spotify: {}",
+                        error_message
+                    ))
+                }
+            }
+            Err(_) => {
+                // 请求发送失败
+                HttpResponse::InternalServerError().body("Failed to send request to Spotify")
+            }
+        }
+    } else {
+        // 会话中找不到 access token
+        HttpResponse::Unauthorized().body("No access_token found in session")
+    }
+}
+
 
 #[derive(Deserialize)]
 struct SpotifyAlbumsResponse {
@@ -536,6 +588,7 @@ async fn main() -> std::io::Result<()> {
             .route("/tracks", web::get().to(get_followed_tracks))
             .route("/playlist", web::get().to(get_followed_playlist))
             .route("/addTrackToPlaylist", web::get().to(search_and_add_tracks))
+            .route("/getUser", web::get().to(get_spotify_user_profile))
     })
     .bind("127.0.0.1:8080")?
     .run()

@@ -22,5 +22,9 @@ export default {
 </script>
 
 <style>
-/* 全局样式可以在这里添加，如果有的话 */
+.content {
+  display: flex;
+  justify-content: center; /* 水平居中 */
+  padding: 2rem; /* 或者你需要的任何值 */
+}
 </style>
