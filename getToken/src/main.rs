@@ -1,3 +1,4 @@
+use actix_cors::Cors;
 use actix_session::{CookieSession, Session};
 use actix_web::{http::header, web, App, HttpResponse, HttpServer, Responder};
 use dotenv::dotenv;
@@ -146,7 +147,9 @@ async fn spotify_callback(
                 };
                 // 尝试插入 token 到会话
                 match session.insert(token_key, &auth_token_response.access_token) {
-                    Ok(_) => HttpResponse::Ok().body(format!("{} stored in session", token_key)),
+                    Ok(_) => HttpResponse::Ok().content_type("text/html").body(
+                        "<html><script>window.opener.postMessage('login successful', '*'); window.close();</script></html>"
+                    ),
                     Err(_) => {
                         HttpResponse::InternalServerError().body("Failed to set session token")
                     }
@@ -163,14 +166,13 @@ struct SpotifyUserProfileResponse {
     display_name: Option<String>,
 }
 
-
 // 获取用户名
 async fn get_spotify_user_profile(session: Session) -> impl Responder {
-    if let Ok(Some(access_token)) = session.get::<String>("access_token_source") {
+    if let Ok(Some(access_token_source)) = session.get::<String>("access_token_source") {
         let client = reqwest::Client::new();
         let response = client
             .get("https://api.spotify.com/v1/me")
-            .bearer_auth(access_token)
+            .bearer_auth(access_token_source)
             .send()
             .await;
 
@@ -190,7 +192,10 @@ async fn get_spotify_user_profile(session: Session) -> impl Responder {
                 } else {
                     // 处理非成功状态码的响应
                     let status_code = resp.status();
-                    let error_message = resp.text().await.unwrap_or_else(|_| "Failed to read error message".to_string());
+                    let error_message = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Failed to read error message".to_string());
                     println!("Error status: {}, MESSAGE: {}", status_code, error_message);
                     HttpResponse::InternalServerError().body(format!(
                         "Failed to get user profile from Spotify: {}",
@@ -208,7 +213,6 @@ async fn get_spotify_user_profile(session: Session) -> impl Responder {
         HttpResponse::Unauthorized().body("No access_token found in session")
     }
 }
-
 
 #[derive(Deserialize)]
 struct SpotifyAlbumsResponse {
@@ -233,7 +237,10 @@ async fn get_saved_albums(session: Session) -> impl Responder {
         let client = reqwest::Client::new();
         let response = client
             .get("https://api.spotify.com/v1/me/albums")
-            .header(header::AUTHORIZATION, format!("Bearer {}", access_token_source))
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer {}", access_token_source),
+            )
             .send()
             .await;
 
@@ -253,11 +260,16 @@ async fn get_saved_albums(session: Session) -> impl Responder {
 
                             HttpResponse::Ok().json(album_info)
                         }
-                        Err(_) => HttpResponse::InternalServerError().body("Failed to parse albums"),
+                        Err(_) => {
+                            HttpResponse::InternalServerError().body("Failed to parse albums")
+                        }
                     }
                 } else {
                     let status_code = resp.status();
-                    let error_message = resp.text().await.unwrap_or_else(|_| "Failed to read error message".to_string());
+                    let error_message = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Failed to read error message".to_string());
                     println!("Error status: {}, MESSAGE: {}", status_code, error_message);
                     HttpResponse::InternalServerError().body(format!(
                         "Failed to get albums from Spotify: {}",
@@ -272,12 +284,9 @@ async fn get_saved_albums(session: Session) -> impl Responder {
     }
 }
 
-
-
-
 #[derive(Deserialize)]
 struct SpotifyArtistResponse {
-    artists: ArtistsResponse
+    artists: ArtistsResponse,
 }
 #[derive(Deserialize)]
 struct ArtistsResponse {
@@ -312,7 +321,8 @@ async fn get_followed_artists(session: Session) -> impl Responder {
                         Ok(artist) => {
                             // 创建一个新的Vec，包含前端所需的歌曲信息
                             let artist_info: Vec<_> = artist
-                                .artists.items
+                                .artists
+                                .items
                                 .into_iter()
                                 .map(|item| {
                                     serde_json::json!({
@@ -521,6 +531,15 @@ async fn get_followed_playlist(session: Session) -> impl Responder {
     }
 }
 
+
+// 发送访问令牌给客户端,被转移号
+async fn get_access_token_source(session: Session) -> impl Responder {
+    if let Some(access_token) = session.get::<String>("access_token_source").unwrap_or(None) {
+        HttpResponse::Ok().json(serde_json::json!({ "access_token_source": access_token }))
+    } else {
+        HttpResponse::Unauthorized().finish()
+    }
+}
 // 歌单列表添加到Spotify歌单
 async fn search_and_add_tracks(
     tracks_list: web::Json<TracksList>,
@@ -577,7 +596,18 @@ async fn search_and_add_tracks(
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
+        let cors = Cors::default()
+            .allowed_origin("http://localhost:5173") // 允许前端应用的源
+            .allowed_methods(vec!["GET", "POST", "OPTIONS"]) // 允许的HTTP方法
+            .allowed_headers(vec![ // 允许的HTTP头
+                header::AUTHORIZATION,
+                header::ACCEPT,
+                header::CONTENT_TYPE,
+            ])
+            .supports_credentials() // 允许凭证
+            .max_age(3600); // 最大预检请求缓存时间
         App::new()
+            .wrap(cors)
             // 配置基于 Cookie 的会话中间件，注意在生产环境中使用安全的密钥
             .wrap(CookieSession::signed(&[0; 32]).secure(false)) // 在生产环境中应该使用 `.secure(true)` 和 HTTPS
             .route("/login/source", web::get().to(login_source))
@@ -589,6 +619,7 @@ async fn main() -> std::io::Result<()> {
             .route("/playlist", web::get().to(get_followed_playlist))
             .route("/addTrackToPlaylist", web::get().to(search_and_add_tracks))
             .route("/getUser", web::get().to(get_spotify_user_profile))
+            .route("/get_access_token", web::get().to(get_access_token_source))
     })
     .bind("127.0.0.1:8080")?
     .run()

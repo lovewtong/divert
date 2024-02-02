@@ -1,5 +1,3 @@
-
-
 <style scoped>
 .login-box {
   display: flex;
@@ -55,33 +53,60 @@ export default {
     };
   },
   methods: {
-    login() {
+    async login() {
       const loginUrl = "http://localhost:8080/login/source"; // 后端登录URL
+      // 打开新窗口进行登录
       this.loginWindow = window.open(
         loginUrl,
         "_blank",
         "width=800,height=600"
       );
 
-      // 监听从打开的登录窗口传来的消息
-      window.addEventListener(
-        "message",
-        (event) => {
-          if (event.origin === "") {
-            // 替换为实际的前端URL
-            if (event.data.display_name) {
-              this.isLoggedIn = true;
-              this.username = event.data.display_name;
-            }
-          }
-        },
-        false
-      );
+      // 检查登录窗口是否关闭，如果关闭则调用getUser
+      const checkLoginWindowInterval = setInterval(() => {
+        if (this.loginWindow.closed) {
+          clearInterval(checkLoginWindowInterval);
+          this.getUser(); // 调用getUser获取用户信息
+        }
+      }, 1000);
     },
+    async getUser() {
+      try {
+        // 首先，从服务器获取访问令牌
+        const tokenResponse = await fetch(
+          "http://localhost:8080/get_access_token",
+          {
+            credentials: "include",
+          }
+        );
+        const tokenData = await tokenResponse.json();
+        const accessToken = tokenData.access_token_source;
+
+        // 然后使用访问令牌发起getUser请求
+        const response = await fetch("http://localhost:8080/getUser", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+          credentials: "include", // 依赖于cookies
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        } else {
+          const data = await response.json();
+          this.username = data.display_name;
+          this.isLoggedIn = true;
+        }
+      } catch (error) {
+        console.error("Fetch操作出现问题：", error);
+      }
+    },
+
     signOut() {
+      // 登出逻辑
       this.isLoggedIn = false;
       this.username = "";
-      // 在这里添加向后端发送登出请求的代码
     },
   },
 };

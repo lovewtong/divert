@@ -61,6 +61,6 @@ export default {
   color: white;
   font-size: 1.5rem;
   cursor: pointer;
-  margin-right: 6%; /* Adjusted as per requirement */
+  margin-right: 6%;
 }
 </style>
