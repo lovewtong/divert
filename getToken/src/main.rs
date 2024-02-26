@@ -376,6 +376,7 @@ struct Track {
     // ...
     id: String,
 }
+
 #[derive(Deserialize)]
 struct Artist {
     // ... 相关字段
@@ -390,6 +391,8 @@ async fn get_followed_tracks(session: Session) -> impl Responder {
         let client = Client::new();
         // 发送GET请求到Spotify API
         let response = client
+
+
             .get("https://api.spotify.com/v1/me/tracks")
             .header(
                 header::AUTHORIZATION,
@@ -540,58 +543,97 @@ async fn get_access_token_source(session: Session) -> impl Responder {
         HttpResponse::Unauthorized().finish()
     }
 }
-// 歌单列表添加到Spotify歌单
-async fn search_and_add_tracks(
-    tracks_list: web::Json<TracksList>,
+
+// 发送访问令牌给客户端,转移号
+async fn get_access_token_target(session: Session) -> impl Responder {
+    if let Some(access_token) = session.get::<String>("access_token_target").unwrap_or(None) {
+        HttpResponse::Ok().json(serde_json::json!({ "access_token_target": access_token }))
+    } else {
+        HttpResponse::Unauthorized().finish()
+    }
+}
+
+#[derive(Deserialize)]
+struct PlaylistFollowRequest {
+    id: String,
+    public: bool,
+}
+
+// "target"用户关注歌单的接口
+async fn follow_playlist_target(
+    web::Json(playlists): web::Json<Vec<PlaylistFollowRequest>>,
     session: Session,
 ) -> impl Responder {
-    // 从会话中获取access_token
-    if let Ok(Some(access_token)) = session.get::<String>("access_token") {
-        // 创建htpp客户端
-        let client = Client::new();
+    let access_token = if let Ok(Some(token)) = session.get::<String>("access_token_target") {
+        token
+    } else {
+        return HttpResponse::Unauthorized().body("No access_token_target found in session");
+    };
 
-        let mut track_uris = Vec::new();
-        for track_name in &tracks_list.tracks {
-            // Spotify API 搜索歌曲
-            let search_response = client
-                .get(format!(
-                    "https://api.spotify.com/v1/search?q={}&type=track",
-                    track_name
-                ))
-                .header(header::AUTHORIZATION, format!("Bearer {}", access_token))
-                .send()
-                .await;
+    let client = Client::new();
 
-            if let Ok(resp) = search_response {
-                if let Ok(search_result) = resp.json::<SearchResponse>().await {
-                    // 提取歌曲URI
-                    if let Some(track) = search_result.tracks.items.first() {
-                        track_uris.push(track.uri.clone());
-                    }
-                }
-            }
-        }
+    for playlist in playlists {
+        let url = format!("https://api.spotify.com/v1/playlists/{}/followers", playlist.id);
 
-        // 将歌曲添加到用户的Spotify歌单
-        let playlist_response = client
-            .post("https://api.spotify.com/v1/playlists/{playlist_id}/tracks") // 替换 {playlist_id} 为实际的歌单ID
-            .header(header::AUTHORIZATION, format!("Bearer {}", access_token))
-            .json(&serde_json::json!({ "uris": track_uris }))
+        let response = client.put(url)
+            .bearer_auth(&access_token)
+            .json(&serde_json::json!({ "public": playlist.public }))
             .send()
             .await;
 
-        match playlist_response {
-            Ok(resp) => HttpResponse::Ok()
-                .content_type("application/json")
-                .body(resp.text().await.unwrap()),
-            Err(_) => {
-                HttpResponse::InternalServerError().body("Failed to add tracks to the playlist")
-            }
+        if let Err(e) = response {
+            return HttpResponse::InternalServerError().body(format!("Failed to follow playlist: {}", e));
         }
+    }
+
+    HttpResponse::Ok().body("Successfully followed the playlists")
+}
+
+// 歌曲保存请求的结构体
+#[derive(Serialize, Deserialize)]
+struct SaveTracksRequest {
+    ids: Vec<String>,
+}
+
+
+// “target”用户保存歌曲的接口
+async fn following_target(
+    web::Json(save_tracks_request): web::Json<SaveTracksRequest>,
+    session: Session,
+) -> impl Responder {
+    // 获取会话中的“target”访问令牌
+    let access_token = if let Ok(Some(token)) = session.get::<String>("access_token_target") {
+        token
     } else {
-        HttpResponse::Unauthorized().body("No access_token found in session")
+        return HttpResponse::Unauthorized().body("No access_token_target found in session");
+    };
+
+    // 创建HTTP客户端
+    let client = Client::new();
+    // 构造Spotify API请求的URL
+    let url = "https://api.spotify.com/v1/me/tracks";
+
+    // 发送PUT请求到Spotify API以保存歌曲
+    let response = client.put(url)
+        .bearer_auth(&access_token)
+        .json(&save_tracks_request)
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            HttpResponse::Ok().body("Tracks successfully saved to user's library")
+        },
+        Ok(resp) => {
+            let error_message = resp.text().await.unwrap_or_default();
+            HttpResponse::BadRequest().body(error_message)
+        },
+        Err(e) => {
+            HttpResponse::InternalServerError().body(format!("Request failed: {:?}", e))
+        }
     }
 }
+
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -617,9 +659,11 @@ async fn main() -> std::io::Result<()> {
             .route("/artist", web::get().to(get_followed_artists))
             .route("/tracks", web::get().to(get_followed_tracks))
             .route("/playlist", web::get().to(get_followed_playlist))
-            .route("/addTrackToPlaylist", web::get().to(search_and_add_tracks))
             .route("/getUser", web::get().to(get_spotify_user_profile))
             .route("/get_access_token", web::get().to(get_access_token_source))
+            .route("/get_target_token", web::get().to(get_access_token_target))
+            .route("/follow_playlist_target", web::post().to(follow_playlist_target))
+            .route("/following_target", web::put().to(following_target))
     })
     .bind("127.0.0.1:8080")?
     .run()
