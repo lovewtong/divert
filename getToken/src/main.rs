@@ -8,13 +8,12 @@ use std::env;
 
 #[derive(Deserialize)]
 struct AuthQuery {
-    state: String, // 假设前端会传递 'source' 或 'target' 作为 state 参数
+    state: String, 
 }
 
 #[derive(Serialize, Deserialize)]
 struct AuthTokenResponse {
     access_token: String,
-    // Include any other fields as needed
 }
 #[derive(Deserialize)]
 struct SearchResponse {
@@ -29,9 +28,7 @@ struct Tracks {
 #[derive(Deserialize)]
 struct TrackItem {
     id: String,
-    // include other fields as necessary
-    uri: String, // The URI is needed to add the track to the playlist
-                 // include other fields as necessary
+    uri: String, 
 }
 
 #[derive(Deserialize)]
@@ -48,6 +45,7 @@ struct PlaylistTracks {
 struct PlaylistOwner {
     display_name: String,
 }
+
 
 // 登录被转移账号
 async fn login_source(session: Session) -> impl Responder {
@@ -104,11 +102,11 @@ async fn login_target(session: Session) -> impl Responder {
         .finish()
 }
 
-// spotify_callback结构体:增加一个新的结构体来接收额外的查询参数
+
 #[derive(Deserialize)]
 struct SpotifyCallbackQuery {
     code: String,
-    state: String, // 假设前端会传递 'source' 或 'target' 作为 state 参数
+    state: String,
 }
 // 登录之后记录token并且返回主界面
 async fn spotify_callback(
@@ -181,7 +179,7 @@ async fn get_spotify_user_profile(session: Session) -> impl Responder {
                 if resp.status().is_success() {
                     match resp.json::<SpotifyUserProfileResponse>().await {
                         Ok(user_profile) => {
-                            // 成功获取用户信息，只返回 display_name
+                            // 成功获取用户信息，只返回display_name
                             HttpResponse::Ok().json(user_profile)
                         }
                         Err(_) => {
@@ -364,24 +362,19 @@ struct SpotifyTracksResponse {
 }
 #[derive(Deserialize)]
 struct TracksItem {
-    // added_at: String, //添加时间
     track: Track,
 }
 #[derive(Deserialize)]
 struct Track {
     album: Album,
     artists: Vec<Artist>,
-    // ... 其他字段
     name: String,
-    // ...
     id: String,
 }
 
 #[derive(Deserialize)]
 struct Artist {
-    // ... 相关字段
     name: String,
-    // ...
 }
 // 获取关注的歌曲
 async fn get_followed_tracks(session: Session) -> impl Responder {
@@ -559,7 +552,7 @@ struct PlaylistFollowRequest {
     public: bool,
 }
 
-// "target"用户关注歌单的接口
+// 为"target"用户关注歌单
 async fn follow_playlist_target(
     web::Json(playlists): web::Json<Vec<PlaylistFollowRequest>>,
     session: Session,
@@ -582,7 +575,7 @@ async fn follow_playlist_target(
             .await;
 
         if let Err(e) = response {
-            return HttpResponse::InternalServerError().body(format!("Failed to follow playlist: {}", e));
+            return HttpResponse::InternalServerError().body(format!("Internal server error: {:?}", e));
         }
     }
 
@@ -596,7 +589,7 @@ struct SaveTracksRequest {
 }
 
 
-// “target”用户保存歌曲的接口
+// 为“target”用户保存歌曲
 async fn following_target(
     web::Json(save_tracks_request): web::Json<SaveTracksRequest>,
     session: Session,
@@ -605,7 +598,7 @@ async fn following_target(
     let access_token = if let Ok(Some(token)) = session.get::<String>("access_token_target") {
         token
     } else {
-        return HttpResponse::Unauthorized().body("No access_token_target found in session");
+        return HttpResponse::Unauthorized().json("No access_token_target found in session");
     };
 
     // 创建HTTP客户端
@@ -622,19 +615,102 @@ async fn following_target(
 
     match response {
         Ok(resp) if resp.status().is_success() => {
-            HttpResponse::Ok().body("Tracks successfully saved to user's library")
+            HttpResponse::Ok().json("Tracks successfully saved to user's library")
         },
         Ok(resp) => {
             let error_message = resp.text().await.unwrap_or_default();
-            HttpResponse::BadRequest().body(error_message)
+            HttpResponse::BadRequest().json(error_message)
         },
         Err(e) => {
-            HttpResponse::InternalServerError().body(format!("Request failed: {:?}", e))
+            HttpResponse::InternalServerError().json(format!("Internal server error: {:?}", e))
         }
     }
 }
 
 
+// 专辑保存请求的结构体
+#[derive(Serialize, Deserialize)]
+struct SaveAlbumeRequest {
+    ids: Vec<String>,
+}
+// 为“target”用户保存专辑
+async fn following_albume(
+    web::Json(save_albume_request): web::Json<SaveAlbumeRequest>,
+    session: Session,
+) -> impl Responder {
+    // 获取会话中的“target”访问令牌
+    let access_token = if let Ok(Some(token)) = session.get::<String>("access_token_target") {
+        token
+    } else {
+        return HttpResponse::Unauthorized().body("No access_token_target found in session");
+    };
+
+    // 创建HTTP客户端
+    let client = Client::new();
+    // 构造Spotify API请求的URL
+    let url = "https://api.spotify.com/v1/me/albums";
+
+    // 发送PUT请求到Spotify API以保存歌曲
+    let response = client.put(url)
+        .bearer_auth(&access_token)
+        .json(&save_albume_request)
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            HttpResponse::Ok().json("albums successfully saved to user's library")
+        },
+        Ok(resp) => {
+            let status_code = resp.status();
+            let error_message = resp.text().await.unwrap_or_default();
+            HttpResponse::build(status_code).json(format!("Spotify API error: {}", error_message))
+        },
+        Err(e) => {
+            HttpResponse::InternalServerError().json(format!("Internal server error: {:?}", e))
+        }
+    }
+}
+
+
+#[derive(Deserialize)]
+struct FollowRequest {
+    // 不需要定义 `type` 字段，因为我们将始终关注艺术家
+    ids: Vec<String>,
+}
+
+async fn follow_artists_or_users(
+    web::Json(follow_request): web::Json<FollowRequest>,
+    session: Session,
+) -> impl Responder {
+    let access_token = if let Ok(Some(token)) = session.get::<String>("access_token_target") {
+        token
+    } else {
+        return HttpResponse::Unauthorized().json("No access_token_target found in session");
+    };
+
+    let client = Client::new();
+    let response = client
+        .put("https://api.spotify.com/v1/me/following?type=artist") // 在URL中指定了关注的类型为艺术家
+        .bearer_auth(&access_token)
+        .json(&serde_json::json!({ "ids": follow_request.ids }))
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            HttpResponse::Ok().json("artist successfully saved to user's library")
+        },
+        Ok(resp) => {
+            let status_code = resp.status();
+            let error_message = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            HttpResponse::build(status_code).json(format!("Spotify API error: {}", error_message))
+        },
+        Err(e) => {
+            HttpResponse::InternalServerError().json(format!("Internal server error: {:?}", e))
+        },
+    }
+}
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
@@ -663,7 +739,9 @@ async fn main() -> std::io::Result<()> {
             .route("/get_access_token", web::get().to(get_access_token_source))
             .route("/get_target_token", web::get().to(get_access_token_target))
             .route("/follow_playlist_target", web::post().to(follow_playlist_target))
-            .route("/following_target", web::put().to(following_target))
+            .route("/follow_tracks_target", web::put().to(following_target))
+            .route("/follow_albume_target", web::put().to(following_albume))
+            .route("/follow_artists_target", web::put().to(follow_artists_or_users))
     })
     .bind("127.0.0.1:8080")?
     .run()
