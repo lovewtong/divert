@@ -15,3 +15,6 @@ actix-session = "0.5"
 dotenv = "0.15.0" 
 actix-cors = "0.7.0"
 serde = { version = "1.0", features = ["derive"] }
+uuid = { version = "0.8", features = ["v4"] } # uuid依赖，记录错误id，唯一
+log = "0.4" # 日志记录
+env_logger = "0.9"

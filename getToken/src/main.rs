@@ -1,3 +1,5 @@
+mod config;
+
 use actix_cors::Cors;
 use actix_session::{CookieSession, Session};
 use actix_web::{http::header, web, App, HttpResponse, HttpServer, Responder};
@@ -6,7 +8,8 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
 use serde_json::Value;
-
+use crate::config::AppConfig; // 正确使用 AppConfig
+use env_logger; 
 
 #[derive(Deserialize)]
 struct AuthQuery {
@@ -760,13 +763,16 @@ async fn get_playlist_tracks(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+
+    env_logger::init();
+    let config = AppConfig::load_from_env().expect("Failed to load the app configuration");
     HttpServer::new(|| {
         let cors = Cors::default()
             .allowed_origin("http://localhost:5173") // 允许前端应用的源
             .allowed_methods(vec!["GET", "POST", "OPTIONS"]) // 允许的HTTP方法
             .allowed_headers(vec![ // 允许的HTTP头
                 header::AUTHORIZATION,
-                header::ACCEPT,
+                header::ACCEPT,                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
                 header::CONTENT_TYPE,
             ])
             .supports_credentials() // 允许凭证
