@@ -5,6 +5,8 @@ use dotenv::dotenv;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
+use serde_json::Value;
+
 
 #[derive(Deserialize)]
 struct AuthQuery {
@@ -711,6 +713,51 @@ async fn follow_artists_or_users(
         },
     }
 }
+
+#[derive(Serialize, Deserialize)]
+struct PlaylistRequest {
+    id: String,
+}
+async fn get_playlist_tracks(
+    web::Json(playlist_request): web::Json<PlaylistRequest>,
+) -> impl Responder {
+    let url = format!("https://api.music.163.com/playlist/track/all?id={}&limit=10&offset=0", playlist_request.id);
+
+    let client = Client::new();
+    let response = client
+        .get(&url)
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let body = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let json: Value = serde_json::from_str(&body).unwrap();
+            let tracks = json["songs"].as_array().unwrap_or(&Vec::new())
+                .iter()
+                .map(|song| {
+                    let name = song["name"].as_str().unwrap_or("Unknown name");
+                    let artists = song["artists"].as_array().unwrap_or(&Vec::new())
+                        .iter()
+                        .map(|artist| artist["name"].as_str().unwrap_or("Unknown artist"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("Song: {}, Artists: {}", name, artists)
+                })
+                .collect::<Vec<_>>();
+            HttpResponse::Ok().json(tracks)
+        },
+        Ok(resp) => {
+            let status_code = resp.status();
+            let error_message = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            HttpResponse::build(status_code).json(format!("NetEase API error: {}", error_message))
+        },
+        Err(e) => {
+            HttpResponse::InternalServerError().json(format!("Internal server error: {:?}", e))
+        },
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
@@ -742,6 +789,7 @@ async fn main() -> std::io::Result<()> {
             .route("/follow_tracks_target", web::put().to(following_target))
             .route("/follow_albume_target", web::put().to(following_albume))
             .route("/follow_artists_target", web::put().to(follow_artists_or_users))
+            .route("/get_playlist_tracks", web::put().to(get_playlist_tracks))
     })
     .bind("127.0.0.1:8080")?
     .run()
